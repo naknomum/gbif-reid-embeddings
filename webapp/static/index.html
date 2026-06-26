@@ -1,0 +1,168 @@
+<html><head>
+<title>GBIF re-ID embedding demo</title>
+<style>
+    body {
+        font-family: arial, sans;
+    }
+
+    div.header {
+        position: fixed;
+        z-index: 15;
+        background-color: white;
+        padding: 3px 20px;;
+        border-radius: 3px;
+    }
+
+    div.annotation {
+        padding: 20px;
+        border: solid 3px lightblue;
+        border-radius: 8px;
+        margin: 10px;
+    }
+
+    div.query-annot {
+        background-color: lightgreen;
+        position: sticky;
+        top: 2.2em;
+        z-index: 10;
+    }
+
+    .img-wrapper {
+        position: relative;
+    }
+    div.annotation img {
+        left: 0;
+        top: 0;
+        height: 350px;
+        width: auto;
+    }
+
+    div.info {
+        position: absolute;
+        left: 10px;
+        top: 8px;
+        background-color: rgba(255,255,255,0.5);
+        padding: 5px;
+        border-radius: 5px;
+    }
+
+    .about-button {
+        margin-left: 8em;
+        padding: 2px 10px;
+        background-color: #BBB;
+    }
+
+    .annot-box {
+        position: absolute;
+        outline: solid 2px rgb(255, 255, 0, 0.6);
+    }
+</style>
+
+<script>
+
+var mainDiv;
+var tmp;
+
+function init() {
+    mainDiv = document.getElementById('main');
+    let passedId = parseInt(document.location.search.substring(1));
+    drawHeader();
+    if (!isNaN(passedId)) fetchData(passedId);
+}
+
+function drawHeader() {
+    let el = document.createElement('div');
+    el.classList.add('header');
+    let html = 'Random annotations sample to test: ';
+    let has = [];
+    for (let i = 0 ; i < 10 ; i++) {
+        let id = Math.floor(Math.random() * 719 + 20);
+        if (has.indexOf(id) >= 0) {
+            i--;
+            continue;
+        }
+        html += '<a href="/?' + id + '">' + id + '</a> ';
+    }
+    html += '<a class="about-button" target="_blank" href="/about">About</a>'
+    el.innerHTML = html;
+    mainDiv.append(el);
+}
+
+function drawAnnot(imgEl, annotData) {
+    if (!annotData.bbox || !annotData.bbox.bbox || !annotData.bbox.bbox[2]) return;
+    var scale = imgEl.height / imgEl.naturalHeight;
+    let widthScale = imgEl.width / imgEl.naturalWidth;
+    let annotDiv = document.createElement('div');
+    annotDiv.setAttribute('title', 'image_id = ' + annotData.image_id + '; annot_id: ' + annotData.annot_id);
+    annotDiv.classList.add('annot-box');
+    annotDiv.style.left = annotData.bbox.bbox[0] * scale;
+    annotDiv.style.top = annotData.bbox.bbox[1] * scale;
+    annotDiv.style.width = annotData.bbox.bbox[2] * scale;
+    annotDiv.style.height = annotData.bbox.bbox[3] * scale;
+    imgEl.parentElement.append(annotDiv);
+    //console.log('imgEl=%o; d=%o, scale=%o', imgEl.parent, annotData, scale);
+}
+
+function displayAnnot(annot, offset) {
+    let isQuery = (offset == 0);
+    console.log('%o: %o', isQuery, annot);
+    let el = document.createElement('div');
+    el.classList.add('annotation');
+    el.id = annot.annot_id;
+
+    let infoEl = document.createElement('div');
+    infoEl.classList.add('info');
+    if (isQuery) {
+        el.classList.add('query-annot');
+        infoEl.innerHTML = '<b>Queried Annotation (id ' + annot.annot_id + ')</b> <a target="_blank" href="https://www.gbif.org/occurrence/' + annot.gbif_id + '">GBIF ID ' + annot.gbif_id + '</a> (image ' + annot.image_id + ')';
+    } else {
+        if (null == annot.score) return; // TODO why is score null for some - maybe no matches?
+        infoEl.innerHTML = '<b>(' + offset + ') Score: ' + roundScore(1 - annot.score) + '</b> <a target="_blank" href="https://www.gbif.org/occurrence/' + annot.gbif_id + '">GBIF ID ' + annot.gbif_id + '</a> (image ' + annot.image_id + ')';
+        //el.style.backgroundColor = 'rgba(0, 0, 0, ' + annot.score + ')';
+    }
+    let imgWrapper = document.createElement('div');
+    imgWrapper.classList.add('img-wrapper');
+    imgWrapper.append(infoEl);
+    let imgEl = document.createElement('img');
+    imgEl.src = annot.uri;
+    imgEl.addEventListener('load', function(ev) {
+        drawAnnot(ev.target, annot);
+    });
+    imgWrapper.append(imgEl);
+    el.append(imgWrapper);
+    mainDiv.append(el);
+}
+
+function roundScore(score) {
+    return Math.round(score * 1000) / 1000;
+}
+
+async function displayData(data) {
+    for (let i = 0 ; i < data.data.length ; i++) {
+        displayAnnot(data.data[i], i);
+    }
+}
+
+async function fetchData(id) {
+    try {
+        const response = await fetch('/match/' + id);
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        const data = await response.json();
+        displayData(data);
+    } catch (error) {
+        console.error('Fetch failed:', error);
+    }
+}
+
+
+
+</script>
+</head>
+<body onLoad="init()">
+
+<div id="main"></div>
+
+</body>
+</html>

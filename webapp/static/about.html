@@ -1,0 +1,133 @@
+<html><head>
+<title>About GBIF re-ID embedding utilities</title>
+<style>
+body {
+    padding: 12px 15em;
+    font-family: arial, sans;
+}
+</style>
+</head>
+
+<body>
+<h1>Overview</h1>
+<p>
+This is a suite of tools for analyzing wildlife photo data from GBIF occurrences, primarily for the purpose
+of identifying specific individual animals across all photo-based occurrences of a given species, e.g. for mark-recapture re-ID.
+</p>
+<p>
+This is accomplished by creating a very simple database of vector embeddings for each animal in a photo.
+In a way this can be thought of as a <i>companion database</i> to the photos and occurrences in GBIF.
+One image may have multiple animals, each of which is represented by a rectangular set of pixels
+called an <i>annotation</i>. From each annotation is extracted an embedding vector, which acts as a sort of
+fingerprint tied to the visual uniqueness of that animal. The more similar two embeddings are (shorter
+distance in the vector space), the more likely the corresponding annotations represent the same animal.
+</p>
+
+<h1>Data structure</h1>
+
+<p>
+Data is stored in simple tables in <a target="_blank" href="https://github.com/pgvector/pgvector">pgvector</a>,
+which is a vector-enabled extension to PostgreSQL. The tables only represent new data extracted from the
+GBIF-sourced image data, and point back to the original GBIF occurrence as reference. The tables can be
+thought of as a layer of metadata on top of each image that lives in GBIF.
+<p>
+<p>
+The tables used are:
+<ol>
+
+<li><b>image</b>
+<ul>
+<li>id - primary key</li>
+<li>uri - uri of image (from GBIF api)</li>
+<li>gbif_id - reference back to GBIF occurrence</li>
+</ul>
+
+<li><b>annotation</b>
+<ul>
+<li>id - primary key</li>
+<li>image_id - foreign key to the image that this annotation is associated with</li>
+<li>bbox - data about rectangle area on the image where this annotation is positioned</li>
+<li>embedding - a vector representing the embedding</li>
+</ul>
+</ol>
+
+Other than the embedding vector, this is a very basic, familiar database schema. Searching for similarity matches across multiple
+annotations, based on vector distance, is <i>very fast</i> in pgvector, so this lightweight setup
+is suited to handle very large volumes of data. Image data storage is temporary, as it is only needed at the time of embedding
+extraction; so the size of the data is also relatively compact.
+</p>
+
+<h1>Current Implementation</h1>
+
+<p>
+The current prototype runs as a set of docker containers using docker compose. There are three containers used:
+<ul>
+<li><b>pgvector</b> - initialized with empty schema as described above</li>
+<li><b>python web app</b> - a very simple demo to select a "query annotation" and find matching annotations in the database</li>
+<li><b>ml-service</b> - the container which handles both the detection of annotations in the image (finding the bounding boxes) and
+extracting the embedding vector from those annotation boxes</li>
+</ul>
+
+</p>
+
+<h2>ml-service details</h2>
+<p>
+At present in the alpha development stage, the ml-service container requires a bit more hands-on assistance to get running. Since it is only
+needed occasionally (when new image data is first ingested), the hopes for future development is to have this container spin up when needed.
+Once the annotations and embeddings are extracted, only the pgvector and webapp containers need be run for user queries.
+</p>
+
+<p>
+For high volumes of image data, ideally the ml-service container would have access to a GPU, but is capable of running on CPU only machines for small-to-medium sized
+data ingestion.
+</p>
+
+<p>
+You can find more information about
+<a target="_blank" href="https://github.com/WildMeOrg/ml-service#wildbook-ml-service">ml-service on github</a>.
+Specifically, the prototype uses the 
+<a target="_blank" href="https://github.com/WildMeOrg/ml-service#pipeline-detect--classify--extract"><b>pipeline</b></a>
+feature of ml-service, which supports detecting all annotations in the image while simultaneous providing the extracted embedding vectors for each,
+all via a single api call.
+</p>
+<p>
+The documentation lists the numerous models and options supported, which can be tailored to specific species or image data as needed. In the case of this
+prototype, for the embedding extraction, the
+<a target="_blank" href="https://arxiv.org/abs/2412.05602">MiewID model</a> is being used;
+specifically
+<a target="_blank" href="https://community.wildme.org/t/miewid-v4-announcement/5406">MiewID v4.1</a>, which
+supports dozens of species with a high degree of matching accuracy. It produces a 2152-length vector, which the pgvector table is initialized to support.
+</p>
+
+<h1>Demo</h1>
+<p>
+A simple <a target="_blank" href="/">demo</a> is provided to help visualize vector matching results. This demo runs on a very small set of data which represents
+only <b>300 Grevy's zebra (<i>Equus grevyi</i>) occurrences</b>, pulled somewhat arbitrarily from GBIF via an api search based on taxonomy and existence of photos.
+</p>
+
+<p>
+Despite the small sample size, the demo still manages to reveal numerous matches of zebra across unrelated occurrences spread over time and geographical space.
+Some interesting examples to explore, which include matches with high (&gt; ~0.6) scores across diverse user submissions, matches on front/oblique orientations, etc:
+<a target="_blank" href="/?369">369</a>,
+<a target="_blank" href="/?388">388</a>,
+<a target="_blank" href="/?473">473</a>,
+<a target="_blank" href="/?508">508</a>,
+<a target="_blank" href="/?542">542</a>.
+</p>
+
+<h1>Future development</h1>
+<p>
+Currently, data is pulled from GBIF manually via a small script, then processed by ml-service to populate the pgvector database. Potential enhancements
+could include:
+<ul>
+<li>allowing users to do on-the-fly processing of queries to GBIF</li>
+<li>nightly updates of embeddings for newly added GBIF occurrences</li>
+<li>annotations/embeddings extracted from local images (not in GBIF) and matched against GBIF embeddings</li>
+<li>open data sharing, such as <a target="_blank" href="https://opencv.org/introduction-to-the-coco-dataset/">COCO export</a> for
+inclusion in <a target="_blank" href="https://lila.science/">lila.science</a>, or for use as training data, etc.</li>
+<li>development of GBIF companion metadata api: input GBIF occurrence id, return annotations/embeddings/matches</li>
+</ul>
+</p>
+
+</body>
+</html>
