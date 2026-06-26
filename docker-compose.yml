@@ -1,0 +1,57 @@
+services:
+  db:
+    image: pgvector/pgvector:pg15-trixie
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+    labels:
+      - autoheal=true
+    user: postgres
+    volumes:
+      - db-pgdata-var:/var/lib/postgresql/data
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf
+      # DB initialization scripts
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - intranet
+    ports:
+      - 5433:5432
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  app:
+    build: ./webapp/
+    ports:
+      - "8300:8000"
+    volumes:
+      - ./webapp/static:/static
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: gbif_embeddings
+      DB_USER: postgres
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+    networks:
+      - intranet
+    depends_on:
+      db:
+        condition: service_healthy
+
+  autoheal:
+    image: willfarrell/autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: "autoheal"
+      AUTOHEAL_INTERVAL: 15
+      AUTOHEAL_START_PERIOD: 600
+      AUTOHEAL_DEFAULT_STOP_TIMEOUT: 60
+    restart: always
+
+networks:
+  intranet:
+
+volumes:
+  db-pgdata-var:
